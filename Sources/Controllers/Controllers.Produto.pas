@@ -8,6 +8,7 @@ uses
   FireDAC.Stan.Param,
   System.JSON,
   System.SysUtils,
+  EstoqueDTO,
   udm;
 
 type
@@ -15,28 +16,25 @@ type
     function GetGrupos(var aStatusCode: Integer): TJSONObject;
     function GetProdutos(var aStatusCode: Integer;const pGrupo, pCodigo, pDescricao: String; const pIdEmpresa: Integer): TJSONObject;
     function GetProduto(var aStatusCode: Integer; const pId: String; pIdEmpresa: Integer): TJSONObject;
-    function ContaEstoque(const pEstoque, pCodProduto, pUsuario, pDispositivo: String;
-                         const pIdEmp, pIdDep, pIdLinha, pIdColuna: Integer): TJSONObject;
-
     function ZeraEstoque(var aStatusCode: Integer;const pCodProduto, pUsuario, pDispositivo: String): TJSONObject;
+    function ContarEstoque(const DTO: TEstoqueDTO; out StatusCode: Integer): TJSONObject;
   end;
 
   TProdutoController = class(TInterfacedObject, IProdutoController)
   private
     FDM: TDM;
+    FQuery: TFDQuery;
     AccessLiberado: Boolean;
     constructor Create;
   public
     class function New: IProdutoController;
     destructor Destroy; override;
 
-    function GetCategoria: TJSONObject;
     function GetProdutos(var aStatusCode: Integer;const pGrupo, pCodigo, pDescricao: String; const pIdEmpresa: Integer): TJSONObject;
-    function GetProduto(var aStatusCode: Integer; const pId: String; pIdEmpresa: Integer): TJSONObject; overload;
-    function ContaEstoque(const pEstoque, pCodProduto, pUsuario, pDispositivo: String; 
-                         const pIdEmp, pIdDep, pIdLinha, pIdColuna: Integer): TJSONObject;
+    function GetProduto(var aStatusCode: Integer; const pId: String; pIdEmpresa: Integer): TJSONObject;
     function GetGrupos(var aStatusCode: Integer): TJSONObject;
     function ZeraEstoque(var aStatusCode: Integer;const pCodProduto, pUsuario, pDispositivo: String): TJSONObject;
+    function ContarEstoque(const DTO: TEstoqueDTO; out StatusCode: Integer): TJSONObject;
   end;
 
 implementation
@@ -45,44 +43,76 @@ uses
   ServerUtils,
   uconsts;
 
+function TProdutoController.ContarEstoque(const DTO: TEstoqueDTO;
+  out StatusCode: Integer): TJSONObject;
+var
+  sQtde:String;
+  rQtde: Real;
+begin
+  try
+    Result := TJSONObject.Create;
+    try
+
+      sQtde := StringReplace(DTO.estoque,'.','',[rfReplaceAll]);
+      sQtde := StringReplace(sQtde,',','.',[rfReplaceAll]) ;
+      rQtde := StrToFloat(sQtde);
+
+
+      FQuery.SQL.Text := 'select pro_codigo from prod_grade where pro_codigo = ' + DTO.codproduto.ToString;
+      FQuery.Open;
+
+      if (FQuery.IsEmpty) or
+         ((not FQuery.IsEmpty) and (DTO.id_linha > 0) and (DTO.id_coluna > 0)) then
+      begin
+        FQuery.Close;
+        FQuery.SQL.Text := 'execute procedure PROC_CONTA_ESTOQUE(:idempresa,:procodigo,:usuario,' +
+                          ':dispositivo, :qtde, :iddeposito, :idlinha, :idcoluna)';
+
+        FQuery.ParamByName('idempresa').AsInteger  := DTO.idemp;
+        FQuery.ParamByName('procodigo').AsInteger  := DTO.codproduto;
+        FQuery.ParamByName('usuario').AsString     := DTO.usuario;
+        FQuery.ParamByName('dispositivo').AsString := DTO.dispositivo;
+        FQuery.ParamByName('qtde').AsFloat         := rQtde;
+        FQuery.ParamByName('iddeposito').AsInteger := DTO.iddep;
+        FQuery.ParamByName('idlinha').AsInteger    := DTO.id_linha;
+        FQuery.ParamByName('idcoluna').AsInteger   := DTO.id_coluna;
+
+        FQuery.ExecSQL;
+
+        Result.AddPair('retorno', 'OK');
+        StatusCode := 200;
+      end
+      else
+      begin
+        Result.AddPair('retorno', 'Produto possui Grade, não pode ser processado');
+        StatusCode := 200;
+      end;
+
+    except
+      on E: Exception do
+      begin
+        Result.AddPair('retorno', 'Erro ao contar estoque');
+        Result.AddPair('erro', E.Message);
+        StatusCode := 200;
+      end;
+    end;
+
+  finally
+  end;
+end;
+
 constructor TProdutoController.Create;
 begin
   FDM := TDM.Create(nil);
+  FQuery := FDM.GetQuery;
   AccessLiberado := True;
 end;
 
 destructor TProdutoController.Destroy;
 begin
   FDM.Free;
+  FQuery.Free;
   inherited;
-end;
-
-function TProdutoController.GetCategoria: TJSONObject;
-var
-  Query: TFDQuery;
-  JsonArray: TJSONArray;
-  JsonObj: TJSONObject;
-begin
-  Result := TJSONObject.Create;
-  Query := FDM.GetQuery();
-  try
-    Query.SQL.Text := 'select gru_codigo codigo, gru_nome descricao from grupo order by gru_nome';
-    Query.Open;
-    
-    JsonArray := TJSONArray.Create;
-    Result.AddPair('categorias', JsonArray);
-    
-    while not Query.Eof do
-    begin
-      JsonObj := TJSONObject.Create;
-      JsonObj.AddPair('codigo', TJSONNumber.Create(Query.FieldByName('codigo').AsInteger));
-      JsonObj.AddPair('descricao', Query.FieldByName('descricao').AsString);
-      JsonArray.AddElement(JsonObj);
-      Query.Next;
-    end;
-  finally
-    Query.Free;
-  end;
 end;
 
 function TProdutoController.GetProdutos(var aStatusCode: Integer;const pGrupo, pCodigo, pDescricao: String; const pIdEmpresa: Integer): TJSONObject;
@@ -178,6 +208,7 @@ var
 begin
   Json := TJSONObject.Create;
   Query := FDM.GetQuery();
+  aStatusCode := 200;
   try
     idEmpresa := pIdEmpresa;
     sCodigoPesquisa := pId.Trim;
@@ -307,58 +338,10 @@ begin
     end;
     Json.AddPair('grade', ArrGrade);
     Result := Json;
-    aStatusCode := 200;
   finally
     Query.Close;
     Query.Free;
   end;
-end;
-
-function TProdutoController.ContaEstoque(const pEstoque, pCodProduto, pUsuario, pDispositivo: String;
-                                      const pIdEmp, pIdDep, pIdLinha, pIdColuna: Integer): TJSONObject;
-var
-  Query: TFDQuery;
-  sQtde: String;
-  rQtde: Double;
-begin
-  Result := TJSONObject.Create;
-  Query := FDM.GetQuery();
-  try
-    sQtde := StringReplace(pEstoque, '.', '', [rfReplaceAll]);
-    sQtde := StringReplace(sQtde, ',', '.', [rfReplaceAll]);
-    rQtde := StrToFloat(sQtde);
-
-    Query.SQL.Text := 'select pro_codigo from prod_grade where pro_codigo = :codigo';
-    Query.ParamByName('codigo').AsString := pCodProduto;
-    Query.Open;
-
-    if (Query.IsEmpty) or ((not Query.IsEmpty) and (pIdLinha > 0) and (pIdColuna > 0)) then
-    begin
-      Query.Close;
-      Query.SQL.Text := 'execute procedure PROC_CONTA_ESTOQUE(:idempresa,:procodigo,:usuario, ' +
-                       ':dispositivo, :qtde, :iddeposito, :idlinha, :idcoluna)';
-      Query.ParamByName('idempresa').AsInteger := pIdEmp;
-      Query.ParamByName('procodigo').AsInteger := StrToInt(pCodProduto);
-      Query.ParamByName('usuario').AsString := pUsuario;
-      Query.ParamByName('dispositivo').AsString := pDispositivo;
-      Query.ParamByName('qtde').AsFloat := rQtde;
-      Query.ParamByName('iddeposito').AsInteger := pIdDep;
-      Query.ParamByName('idlinha').AsInteger := pIdLinha;
-      Query.ParamByName('idcoluna').AsInteger := pIdColuna;
-      Query.ExecSQL;
-      Result.AddPair('retorno', 'OK');
-    end
-    else
-    begin
-      Result.AddPair('retorno', 'Produto possui Grade, não pode ser processado');
-    end;
-  except
-    on E: Exception do
-    begin
-      Result.AddPair('retorno', 'Erro ao Contar estoque');
-    end;
-  end;
-  Query.Free;
 end;
 
 function TProdutoController.GetGrupos(var aStatusCode: Integer): TJSONObject;

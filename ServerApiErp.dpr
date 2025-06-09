@@ -40,7 +40,8 @@ uses
   Controllers.Produto in 'Sources\Controllers\Controllers.Produto.pas',
   util.ini in 'Sources\Utils\util.ini.pas',
   ServerUtils in 'Sources\Utils\ServerUtils.pas',
-  uconsts in 'Sources\Consts\uconsts.pas';
+  uconsts in 'Sources\Consts\uconsts.pas',
+  EstoqueDTO in 'Sources\DTO\EstoqueDTO.pas';
 
 const Porta = 8087;
 

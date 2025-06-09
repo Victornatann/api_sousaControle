@@ -16,6 +16,7 @@ type
     ['{87654321-4321-4321-4321-CBA987654321}']
     function GetCaixaGeral(var aStatusCode: Integer): TJSONObject;
     function GetCaixaGeralDia(const aData: string; var aStatusCode: Integer): TJSONObject;
+    function ObterDadosCaixa(const CodAbertura: Integer; var aStatusCode: Integer): TJSONObject;
   end;
 
   TCaixaController = class(TInterfacedObject, ICaixaController)
@@ -29,6 +30,7 @@ type
     class function New: ICaixaController;
     function GetCaixaGeral(var aStatusCode: Integer): TJSONObject;
     function GetCaixaGeralDia(const aData: string; var aStatusCode: Integer): TJSONObject;
+    function ObterDadosCaixa(const CodAbertura: Integer; var aStatusCode: Integer): TJSONObject;
 
   end;
 
@@ -40,6 +42,123 @@ uses
 class function TCaixaController.New: ICaixaController;
 begin
   Result := Self.Create;
+end;
+
+function TCaixaController.ObterDadosCaixa(const CodAbertura: Integer;
+  var aStatusCode: Integer): TJSONObject;
+var
+  Json: TJSONObject;
+  JArray: TJSONArray;
+  JObj: TJSONObject;
+begin
+  Result := nil;
+  aStatusCode := 400; // Default: Bad Request
+
+  if CodAbertura <= 0 then
+  begin
+    aStatusCode := 400; // Código inválido
+    Exit;
+  end;
+
+  Json := TJSONObject.Create;
+
+  try
+    // Consulta principal caixa
+    FQuery.SQL.Text := 'select cx_numero, cx_data, cx_time, cx_supli from caixa where cx_codigo = :id order by 1';
+    FQuery.ParamByName('id').AsInteger := CodAbertura;
+    FQuery.Open;
+
+    if FQuery.IsEmpty then
+    begin
+      aStatusCode := 404; // Não encontrado
+      Json.Free;
+      FQuery.Close;
+      FQuery.Free;
+      Exit;
+    end;
+
+    Json.AddPair('caixa', FQuery.FieldByName('cx_numero').AsString);
+    Json.AddPair('datahora', DateTimeToStr(FQuery.FieldByName('cx_data').AsDateTime + FQuery.FieldByName('cx_time').AsDateTime));
+    Json.AddPair('supli', TJSONNumber.Create(FQuery.FieldByName('cx_supli').AsFloat));
+
+    // formas
+    JArray := TJSONArray.Create;
+    FQuery.Close;
+    FQuery.SQL.Text := 'select * from VIEW_CX_CXRESUMO where codabertura = :id';
+    FQuery.ParamByName('id').AsInteger := CodAbertura;
+    FQuery.Open;
+    while not FQuery.Eof do
+    begin
+      JObj := TJSONObject.Create;
+      JObj.AddPair('forma', FQuery.FieldByName('forma').AsString);
+      JObj.AddPair('total', TJSONNumber.Create(FQuery.FieldByName('total').AsFloat));
+      JArray.AddElement(JObj);
+      FQuery.Next;
+    end;
+    Json.AddPair('formas', JArray);
+
+    // sangria
+    JArray := TJSONArray.Create;
+    FQuery.Close;
+    FQuery.SQL.Text := 'select rt_tipo, rt_valor, cast(rt_obs as varchar(200)) obs from sanguia where codabertura = :id';
+    FQuery.ParamByName('id').AsInteger := CodAbertura;
+    FQuery.Open;
+    while not FQuery.Eof do
+    begin
+      JObj := TJSONObject.Create;
+      JObj.AddPair('forma', FQuery.FieldByName('rt_tipo').AsString);
+      JObj.AddPair('valor', TJSONNumber.Create(FQuery.FieldByName('rt_valor').AsFloat));
+      JObj.AddPair('obs', FQuery.FieldByName('obs').AsString);
+      JArray.AddElement(JObj);
+      FQuery.Next;
+    end;
+    Json.AddPair('sangria', JArray);
+
+    // resumomovi
+    JArray := TJSONArray.Create;
+    FQuery.Close;
+    FQuery.SQL.Text := 'select operacao, forma, total_credito, total_debito, total from VIEW_CX_RESUMO where codabertura = :id';
+    FQuery.ParamByName('id').AsInteger := CodAbertura;
+    FQuery.Open;
+    while not FQuery.Eof do
+    begin
+      JObj := TJSONObject.Create;
+      JObj.AddPair('operacao', FQuery.FieldByName('operacao').AsString);
+      JObj.AddPair('forma', FQuery.FieldByName('forma').AsString);
+      JObj.AddPair('total_credito', TJSONNumber.Create(FQuery.FieldByName('total_credito').AsFloat));
+      JObj.AddPair('total_debito', TJSONNumber.Create(FQuery.FieldByName('total_debito').AsFloat));
+      JObj.AddPair('total', TJSONNumber.Create(FQuery.FieldByName('total').AsFloat));
+      JArray.AddElement(JObj);
+      FQuery.Next;
+    end;
+    Json.AddPair('resumomovi', JArray);
+
+    // info
+    JArray := TJSONArray.Create;
+    FQuery.Close;
+    FQuery.SQL.Text := 'select * from view_cx_info where codabertura = :id';
+    FQuery.ParamByName('id').AsInteger := CodAbertura;
+    FQuery.Open;
+    while not FQuery.Eof do
+    begin
+      JObj := TJSONObject.Create;
+      JObj.AddPair('ordem', TJSONNumber.Create(FQuery.FieldByName('ordem').AsInteger));
+      JObj.AddPair('idimg', TJSONNumber.Create(FQuery.FieldByName('idimg').AsInteger));
+      JObj.AddPair('descricao', FQuery.FieldByName('descricao').AsString);
+      JObj.AddPair('cancelado', FQuery.FieldByName('cancelado').AsString);
+      JObj.AddPair('qtde', TJSONNumber.Create(FQuery.FieldByName('qtde').AsInteger));
+      JObj.AddPair('total', TJSONNumber.Create(FQuery.FieldByName('total').AsFloat));
+      JArray.AddElement(JObj);
+      FQuery.Next;
+    end;
+    Json.AddPair('info', JArray);
+
+    aStatusCode := 200;
+    Result := Json;
+  finally
+    if (aStatusCode <> 200) and Assigned(Json) then
+      Json.Free;
+  end;
 end;
 
 constructor TCaixaController.Create;

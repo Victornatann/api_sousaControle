@@ -24,6 +24,11 @@ type
     destructor Destroy; override;
     function PostLogin(const Req: THorseRequest; var aStatusCode: Integer): TJSONObject;
     function GetPermissao(var aStatusCode: Integer; const status: String; idusuario: Integer): TJSONObject;
+    function AtualizarAutorizacao(
+      const idAutorizacao, idUsuario: Integer;
+      const acao, obs: string;
+      var aStatusCode: Integer
+    ): TJSONObject;
   end;
 
 implementation
@@ -34,6 +39,54 @@ uses ServerUtils, uconsts;
 class function TAuthController.New: TAuthController;
 begin
   Result := Self.create;
+end;
+
+function TAuthController.AtualizarAutorizacao(const idAutorizacao,
+  idUsuario: Integer; const acao, obs: string;
+  var aStatusCode: Integer): TJSONObject;
+var
+  Query: TFDQuery;
+  acaoParam: string;
+begin
+  Result := TJSONObject.Create;
+  aStatusCode := 200;
+
+  if not AccessLiberado then
+  begin
+    Result.AddPair('retorno', 'Token inválido');
+    Exit;
+  end;
+
+  try
+    Query := FDM.GetQuery();
+    try
+      Query.SQL.Text :=
+        'update autorizacao set OBS_SUPERVISOR=:obs, id_supervisor=:idusuario, ' +
+        'aprovado=:acao, data_conclusao=current_date ' +
+        'where id_autorizacao=:idautorizacao';
+
+      Query.ParamByName('idautorizacao').AsInteger := idAutorizacao;
+      Query.ParamByName('idusuario').AsInteger := idUsuario;
+
+      if acao = 'C' then
+        acaoParam := 'N'
+      else
+        acaoParam := acao;
+
+      Query.ParamByName('acao').AsString := acaoParam;
+      Query.ParamByName('obs').AsString := obs;
+
+      Query.ExecSQL;
+      Result.AddPair('retorno', 'OK');
+    finally
+      Query.Free;
+    end;
+  except
+    on E: Exception do
+    begin
+      Result.AddPair('retorno', 'Erro ao mudar acao de permissao');
+    end;
+  end;
 end;
 
 constructor TAuthController.Create;
@@ -143,6 +196,7 @@ begin
     sSerial := Req.Query['serial'];
     sToken := Req.Query['token'];
 
+
     Query := FDM.GetQuery();
     Query02 := FDM.GetQuery();
     try
@@ -168,6 +222,7 @@ begin
       begin
         Result := TJSONObject.Create;
         Result.AddPair('error', 'Credenciais inválidas');
+        aStatusCode := 403;
         Exit;
       end;
 
@@ -225,7 +280,6 @@ begin
         end;
         
         Result.AddPair('menu', JsonArray);
-        aStatusCode := 200;
       except
         JsonObj.Free;
         JsonArray.Free;
@@ -239,6 +293,7 @@ begin
       Query.ParamByName('token').AsString := Query02.FieldByName('token').AsString;
       Query.ParamByName('id_usuario').AsString := IdUsuario;
       Query.ExecSQL();
+      aStatusCode := 200;
 
     finally
       Query.Close;
