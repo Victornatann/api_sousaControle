@@ -375,23 +375,16 @@ begin
 end;
 
 function TProdutoController.ZeraEstoque(var aStatusCode: Integer;const pCodProduto, pUsuario, pDispositivo: String): TJSONObject;
-var
-  Query: TFDQuery;
+
 begin
   Result := TJSONObject.Create;
-  Query := FDM.GetQuery();
   try
-    Query.SQL.Text := 'update produto set pro_estoque = 0 where pro_codigo = :codigo';
-    Query.ParamByName('codigo').AsString := pCodProduto;
-    Query.ExecSQL;
-    
-    Query.SQL.Text := 'insert into estoque_zerado (cod_produto, usuario, dispositivo, data) ' +
-                     'values (:cod_produto, :usuario, :dispositivo, CURRENT_TIMESTAMP)';
-    Query.ParamByName('cod_produto').AsString := pCodProduto;
-    Query.ParamByName('usuario').AsString := pUsuario;
-    Query.ParamByName('dispositivo').AsString := pDispositivo;
-    Query.ExecSQL;
-    
+    FQuery.SQL.Text:= 'execute procedure PROC_ZERARESTOQUE(1,'+
+                      pCodProduto+','+
+                      pUsuario+','+
+                      QuotedStr(pDispositivo)+
+                      ')';
+    FQuery.ExecSQL;
     Result.AddPair('retorno', 'OK');
     aStatusCode := 200;
   except
@@ -401,7 +394,6 @@ begin
       aStatusCode := 200;
     end;
   end;
-  Query.Free;
 end;
 
 end. 

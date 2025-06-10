@@ -150,7 +150,7 @@ begin
       while not Query.EOF do
       begin
         itemObj := TJSONObject.Create;
-        itemObj.AddPair('ID_AUTORIZACAO', TJSONNumber.Create(Query.FieldByName('ID_AUTORIZACAO').AsInteger));
+        itemObj.AddPair('id_autorizacao', TJSONNumber.Create(Query.FieldByName('id_autorizacao').AsInteger));
         itemObj.AddPair('data', TJSONString.Create(Query.FieldByName('data').AsString));
         itemObj.AddPair('titulo', TJSONString.Create(Query.FieldByName('titulo').AsString));
         itemObj.AddPair('obs', TJSONString.Create(Query.FieldByName('obs').AsString));
