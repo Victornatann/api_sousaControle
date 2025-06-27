@@ -117,14 +117,14 @@ end;
 
 function TProdutoController.GetProdutos(var aStatusCode: Integer;const pGrupo, pCodigo, pDescricao: String; const pIdEmpresa: Integer): TJSONObject;
 var
-  Query: TFDQuery;
+  Query, GradeQuery: TFDQuery;
   sPesq: String;
-  JsonArray: TJSONArray;
-  JsonObj: TJSONObject;
+  JsonArray, GradeArray: TJSONArray;
+  JsonObj, GradeObj: TJSONObject;
 const
   header = 'select first 100 p.pro_codigo, p.pro_descricao, p.pro_codbarra, e.pvenda, e.pcusto, e.estoque,'+
            ' g.gru_nome, m.ma_nome, e.ultima_saida, e.ultima_entrada, '+
-           ' f.nome fornecedor, p.pro_embalagem '+
+           ' f.nome fornecedor, p.pro_embalagem, p.pro_usa_grade '+
            ' from produto p '+
            ' inner join prod_estoque e on (e.pro_codigo = p.pro_codigo and e.id_empresa=:idempresa) '+
            ' left outer join grupo g on (g.gru_codigo = p.gru_codigo) '+
@@ -142,12 +142,13 @@ begin
 
   Result := TJSONObject.Create;
   Query := FDM.GetQuery();
+  GradeQuery := FDM.GetQuery();
   try
     sPesq := ' where p.pro_excluido = ''N''';
     if pGrupo <> '' then
       sPesq := sPesq + ' and g.gru_codigo = :grupo';
     if pCodigo <> '' then
-      sPesq := sPesq + ' and (p.pro_codigo = :codigo or p.pro_codbarra = :codigo)';
+      sPesq := sPesq + ' and (CAST(P.PRO_CODIGO AS VARCHAR(20)) = :CODIGO OR P.PRO_CODBARRA = :CODIGO)';
     if pDescricao <> '' then
       sPesq := sPesq + ' and p.pro_descricao like ''%''||:descricao||''%'' ';
 
@@ -163,7 +164,7 @@ begin
     Query.ParamByName('idempresa').AsInteger := pIdEmpresa;
     
     Query.Open;
-    
+
     JsonArray := TJSONArray.Create;
     while not Query.Eof do
     begin
@@ -180,6 +181,34 @@ begin
       JsonObj.AddPair('ultima_entrada', FormatDateTime('DD/MM/YYYY', Query.FieldByName('ultima_entrada').AsDateTime));
       JsonObj.AddPair('fornecedor', Query.FieldByName('fornecedor').AsString);
       JsonObj.AddPair('pro_embalagem', Query.FieldByName('pro_embalagem').AsString);
+      JsonObj.AddPair('usa_grade', Query.FieldByName('pro_usa_grade').AsString);
+
+      GradeArray := TJSONArray.Create;
+      if Query.FieldByName('pro_usa_grade').AsString = 'S' then
+      begin
+        GradeQuery.SQL.Text := 'SELECT * FROM SEL_GRADE_PROD_DEP(:id, :id_empresa, :id_deposito)';
+        GradeQuery.ParamByName('id').AsInteger := Query.FieldByName('pro_codigo').AsInteger;
+        GradeQuery.ParamByName('id_empresa').AsInteger := pIdEmpresa;
+        GradeQuery.ParamByName('id_deposito').AsInteger := 1; // ajuste conforme necessário
+        GradeQuery.Open;
+
+        while not GradeQuery.Eof do
+        begin
+          GradeObj := TJSONObject.Create;
+          GradeObj.AddPair('id_coluna', TJSONNumber.Create(GradeQuery.FieldByName('ID_COLUNA').AsInteger));
+          GradeObj.AddPair('id_grade', TJSONNumber.Create(GradeQuery.FieldByName('ID_GRADE').AsInteger));
+          GradeObj.AddPair('id_linha', TJSONNumber.Create(GradeQuery.FieldByName('ID_LINHA').AsInteger));
+          GradeObj.AddPair('linha', GradeQuery.FieldByName('LINHA').AsString);
+          GradeObj.AddPair('coluna', GradeQuery.FieldByName('COLUNA').AsString);
+          GradeObj.AddPair('descricao', GradeQuery.FieldByName('DESCRICAO').AsString);
+          GradeObj.AddPair('valor', GradeQuery.FieldByName('VALOR').AsString);
+          GradeObj.AddPair('estoque', TJSONNumber.Create(GradeQuery.FieldByName('ESTOQUE').AsFloat));
+          GradeArray.AddElement(GradeObj);
+          GradeQuery.Next;
+        end;
+      end;
+
+      JsonObj.AddPair('grade', GradeArray);
       JsonArray.AddElement(JsonObj);
       Query.Next;
     end;
@@ -188,6 +217,7 @@ begin
     aStatusCode := 200;
   finally
     Query.Free;
+    GradeQuery.Free;
   end;
 end;
 

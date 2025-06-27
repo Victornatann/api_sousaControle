@@ -41,7 +41,11 @@ uses
   util.ini in 'Sources\Utils\util.ini.pas',
   ServerUtils in 'Sources\Utils\ServerUtils.pas',
   uconsts in 'Sources\Consts\uconsts.pas',
-  EstoqueDTO in 'Sources\DTO\EstoqueDTO.pas';
+  EstoqueDTO in 'Sources\DTO\EstoqueDTO.pas',
+  Controllers.Inventario in 'Sources\Controllers\Controllers.Inventario.pas',
+  Routes.Inventario in 'Sources\Routes\Routes.Inventario.pas',
+  Controllers.Financeiro in 'Sources\Controllers\Controllers.Financeiro.pas',
+  Routes.Financeiro in 'Sources\Routes\Routes.Financeiro.pas';
 
 const Porta = 8087;
 
@@ -54,10 +58,12 @@ begin
   try
     try
       THorse.Use(Jhonson());
-      Routes.Auth.Registry;
-      Routes.Caixa.Registry;
-      Routes.DFE.Registry;
-      Routes.Produto.Registry;
+      Routes.Auth.Registry();
+      Routes.Caixa.Registry();
+      Routes.DFE.Registry();
+      Routes.Produto.Registry();
+      Routes.Inventario.Registry();
+      Routes.Financeiro.Registry();
 
       THorse.Listen(Porta, OnListen);
     finally
